@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Radiación Solar y Estadística</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #ecd20c;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: rgb(20, 205, 215);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        #map {
+            margin-top: 20px;
+            height: 500px;
+            border-radius: 8px;
+        }
+        #grafica-container {
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Radiación Solar y Cálculos Estadísticos</h1>
+        <div>
+            <p>Selecciona un punto en el mapa para obtener la radiación solar.</p>
+            <div id="map"></div>
+            <div class="resultados" style="display: none;">
+                <h2 class="resultados-titulo">Datos de Radiación Solar</h2>
+                <div id="datos-meteorologicos"></div>
+            </div>
+        </div>
+
+        <h2>Cálculos Estadísticos</h2>
+        <textarea id="numeros" placeholder="1 2 3 4 5 6 7 8 9"></textarea>
+        <br><br>
+        <label for="excelFile">Selecciona tu archivo Excel:</label>
+        <input type="file" id="excelFile" accept=".xlsx, .xls" multiple>
+        <br><br>
+        <label for="tipoGrafica">Selecciona el tipo de gráfica:</label>
+        <select id="tipoGrafica">
+            <option value="histograma">Histograma</option>
+            <option value="caja y bigote">Caja y Bigote</option>
+            <option value="xy">XY</option>
+            <option value="tendencia">Tendencia</option>
+        </select>
+        <br><br>
+        <button id="calcular" type="button">Calcular</button>
+
+        <div class="resultados">
+            <h3>Resultados:</h3>
+            <p>Media: <span id="media0"></span></p>
+            <p>Moda: <span id="moda0"></span></p>
+            <p>Mediana: <span id="mediana0"></span></p>
+            <p>Varianza: <span id="varianza0"></span></p>
+            <p>Desviación Estándar: <span id="desviacion0"></span></p>
+        </div>
+
+        <div id="grafica-container"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            let map = L.map('map').setView([19.702187, -101.2034349], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            let marker = null;
+            map.on('click', function(e) {
+                if (marker) map.removeLayer(marker);
+                marker = L.marker(e.latlng).addTo(map);
+                fetchRadiation(e.latlng.lat, e.latlng.lng);
+            });
+        });
+
+        async function fetchRadiation(lat, lon) {
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=shortwave_radiation,direct_radiation,diffuse_radiation&timezone=America/Mexico_City`;
+
+            try {
+                const respuesta = await fetch(url);
+                const datos = await respuesta.json();
+                if (datos.current) displayRadiation(datos);
+            } catch (error) {
+                console.error('Error al obtener los datos:', error);
+            }
+        }
+
+        function displayRadiation(data) {
+            const resultsDiv = document.querySelector('.resultados');
+            const resultsContent = document.getElementById('datos-meteorologicos');
+
+            resultsDiv.style.display = 'block';
+            resultsContent.innerHTML = `
+                <table>
+                    <tr><td>Fecha:</td><td>${new Date().toLocaleDateString()}</td></tr>
+                    <tr><td>Hora:</td><td>${new Date().toLocaleTimeString()}</td></tr>
+                    <tr><td>Radiación Solar:</td><td>${data.current.shortwave_radiation} W/m²</td></tr>
+                </table>`;
+        }
+    </script>
+
+    <h1>Calculadoras</h1>
+    <button onclick="mostrarCalculadora('matrices')">Calculadora de Matrices</button>
+    <button onclick="mostrarCalculadora('minimos')">Calculadora de Mínimos Cuadrados</button>
+
+    <div id="matrices" class="calculadora visible">
+        <h2>Calculadora de Matrices</h2>
+        <textarea id="inputMatrices" placeholder="Ingresa la matriz separando elementos por comas y filas por saltos de línea"></textarea>
+        <button onclick="calcularMatrices()">Calcular Determinante</button>
+        <p>Determinante: <span id="resultadoMatrices"></span></p>
+    </div>
+
+    <div id="minimos" class="calculadora">
+        <h2>Calculadora de Mínimos Cuadrados</h2>
+        <textarea id="inputMinimos" placeholder="Ingresa los valores en formato x,y separados por saltos de línea"></textarea>
+        <button onclick="calcularMinimos()">Calcular Ecuación de la Recta</button>
+        <p>Ecuación de la recta: <span id="resultadoMinimos"></span></p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.6.4/math.min.js"></script>
+    <script>
+        function mostrarCalculadora(id) {
+            document.getElementById('matrices').style.display = 'none';
+            document.getElementById('minimos').style.display = 'none';
+            document.getElementById(id).style.display = 'block';
+        }
+
+        function calcularMatrices() {
+            const input = document.getElementById('inputMatrices').value.trim();
+            const matriz = input.split('\n').map(row => row.split(',').map(Number));
+            const determinante = math.det(matriz);
+            document.getElementById('resultadoMatrices').textContent = determinante.toFixed(2);
+        }
+
+        function calcularMinimos() {
+            const input = document.getElementById('inputMinimos').value.trim();
+            const puntos = input.split('\n').map(row => row.split(',').map(Number));
+            const n = puntos.length;
+            const sumX = puntos.reduce((acc, p) => acc + p[0], 0);
+            const sumY = puntos.reduce((acc, p) => acc + p[1], 0);
+            const sumXY = puntos.reduce((acc, p) => acc + p[0] * p[1], 0);
+            const sumX2 = puntos.reduce((acc, p) => acc + p[0] ** 2, 0);
+            const pendiente = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX ** 2);
+            const intercepto = (sumY - pendiente * sumX) / n;
+            document.getElementById('resultadoMinimos').textContent = `y = ${pendiente.toFixed(2)}x + ${intercepto.toFixed(2)}`;
+        }
+    </script>
+</body>
+</html>
