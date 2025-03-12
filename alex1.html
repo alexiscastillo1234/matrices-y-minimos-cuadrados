@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Radiacion Solar y Estadística</title>
+    <!-- Link a Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <!-- Se incluye Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <!-- Se incluye XLSX para leer archivos de Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Agregar estilos personalizados -->
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #ecd20c;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: rgb(20, 205, 215);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        h2 {
+            margin-top: 30px;
+        }
+        p {
+            font-size: 16px;
+            color: #555;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+        input[type="file"], select, button {
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .resultados-titulo {
+            font-weight: bold;
+            color: #333;
+            margin-top: 30px;
+        }
+        .dataset-results p {
+            margin: 5px 0;
+        }
+        .resultados {
+            margin-top: 20px;
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table td {
+            padding: 8px;
+            border: 1px solid #ddd;
+        }
+        #map {
+            margin-top: 20px;
+            border-radius: 8px;
+        }
+        #grafica-container {
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Radiacion Solar y Calculos Estadisticos</h1>
+
+        <!-- Seccion de Radiacion Solar -->
+        <div>
+            <p>Selecciona un punto en el mapa para obtener la radiacion solar.</p>
+            <div id="map" style="height: 500px;"></div>
+            <div class="resultados" style="display: none;">
+                <h2 class="resultados-titulo">Datos de Radiacion Solar</h2>
+                <div id="datos-meteorologicos">
+                    <p>Los datos de radiacion solar se mostraran aqui.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seccion de Calculos Estadisticos -->
+        <h2>Calculos Estadisticos</h2>
+        <p>Introduce un conjunto de numeros separados por un espacio:</p>
+        <textarea id="numeros" placeholder="1 2 3 4 5 6 7 8 9"></textarea>
+        
+        <br>
+        <label for="excelFile">Selecciona tu archivo Excel:</label>
+        <input type="file" id="excelFile" accept=".xlsx, .xls" multiple>
+        
+        <br><br>
+        <label for="tipoGrafica">Selecciona el tipo de grafica:</label>
+        <select id="tipoGrafica">
+            <option value="histograma">Histograma</option>
+            <option value="caja y bigote">Caja y Bigote</option>
+            <option value="xy">XY</option>
+            <option value="tendencia">Tendencia</option>
+        </select>
+
+        <br><br>
+        <button id="calcular" type="button">Calcular</button>
+        
+        <div class="resultados-titulo">
+            <h3>Resultados:</h3>
+        </div>
+        <div class="resultados">
+            <div class="dataset-results" id="dataset0">
+                <h4>Datos 1</h4>
+                <p>Media: <span id="media0"></span></p>
+                <p>Moda: <span id="moda0"></span></p>
+                <p>Mediana: <span id="mediana0"></span></p>
+                <p>Varianza: <span id="varianza0"></span></p>
+                <p>Desviacion Estandar: <span id="desviacion0"></span></p>
+                <p>Q1: <span id="q10"></span></p>
+                <p>Q2 (Mediana): <span id="q20"></span></p>
+                <p>Q3: <span id="q30"></span></p>
+                <p>Sesgo: <span id="sesgo0"></span></p>
+                <p>Curtosis: <span id="curtosis0"></span></p>
+            </div>
+        </div>
+
+        <!-- Contenedor para las graficas -->
+        <div id="grafica-container" style="height: 400px; width: 100%;"></div>
+    </div>
+
+    <!-- Script de Leaflet -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Script personalizado -->
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            // Inicializa el mapa
+            let map = L.map('map').setView([19.702187, -101.2034349], 10); // El mapa por defecto apunta a Morelia
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            // Marcapasos para ubicaciones clickeadas
+            let marker = null;
+
+            map.on('click', function(e) {
+                // Elimina el marcador anterior
+                if (marker) {
+                    map.removeLayer(marker);
+                }
+
+                // Agrega nuevo marcador en la ubicación clickeada
+                marker = L.marker(e.latlng).addTo(map);
+
+                // Obtener radiacion
+                fetchRadiation(e.latlng.lat, e.latlng.lng);
+            });
+        });
+
+        async function fetchRadiation(lat, lon) {
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=shortwave_radiation,direct_radiation,diffuse_radiation&timezone=America/Mexico_City`;
+
+            try {
+                const respuesta = await fetch(url);
+                const datos = await respuesta.json();
+                
+                if (datos && datos.current) {
+                    displayRadiation(datos);
+                }
+            } catch (error) {
+                console.error('Error al obtener los datos:', error);
+            }
+        }
+
+        function displayRadiation(data) {
+            const resultsDiv = document.querySelector('.resultados');
+            const resultsContent = document.getElementById('datos-meteorologicos');
+            const resultsTitle = document.querySelector('.resultados-titulo');
+
+            resultsDiv.style.display = 'block';
+            resultsTitle.style.display = 'block';
+
+            resultsContent.innerHTML = `
+                <table>
+                    <tr>
+                        <td>Fecha: </td><td>${new Date().toLocaleDateString()}</td>
+                    </tr>
+                    <tr>
+                        <td>Hora: </td><td>${new Date().toLocaleTimeString()}</td>
+                    </tr>
+                    <tr>
+                        <td>Radiacion Solar: </td><td>${data.current.shortwave_radiation} W/m²</td>
+                    </tr>
+                </table>
+            `;
+        }
+
+        // Función que lee los datos del archivo Excel
+        function leerArchivoExcel(event) {
+            let archivo = event.target.files[0];
+            let lector = new FileReader();
+
+            lector.onload = function(e) {
+                let datos = e.target.result;
+                let libro = XLSX.read(datos, {type: 'binary'});
+                let hoja = libro.Sheets[libro.SheetNames[0]];
+                let rango = XLSX.utils.sheet_to_json(hoja, {header: 1});
+
+                let valores = [];
+                for (let i = 0; i < rango.length; i++) {
+                    for (let j = 0; j < rango[i].length; j++) {
+                        if (!isNaN(rango[i][j])) {
+                            valores.push(rango[i][j]);
+                        }
+                    }
+                }
+                return valores;
+            };
+            lector.readAsBinaryString(archivo);
+        }
+
+        // Funcion para calcular estadisticas
+        function calcularEstadisticas(datos) {
+            let media = promedio(datos);
+            let moda = calcularModa(datos);
+            let mediana = calcularMediana(datos);
+            let varianza = calcularVarianza(datos, media);
+            let desviacion = Math.sqrt(varianza);
+            let q1 = calcularCuartil(datos, 0.25);
+            let q2 = calcularCuartil(datos, 0.50);  // Mediana es Q2
+            let q3 = calcularCuartil(datos, 0.75);
+            let sesgo = calcularSesgo(datos, media, desviacion);
+            let curtosis = calcularCurtosis(datos, media, desviacion);
+            
+            // Mostrar resultados en el HTML
+            document.getElementById("media0").textContent = media;
+            document.getElementById("moda0").textContent = moda.join(", ");
+            document.getElementById("mediana0").textContent = mediana;
+            document.getElementById("varianza0").textContent = varianza;
+            document.getElementById("desviacion0").textContent = desviacion;
+            document.getElementById("q10").textContent = q1;
+            document.getElementById("q20").textContent = q2;
+            document.getElementById("q30").textContent = q3;
+            document.getElementById("sesgo0").textContent = sesgo;
+            document.getElementById("curtosis0").textContent = curtosis;
+
+            // Graficar según el tipo seleccionado
+            graficar(datos);
+        }
+
+        // Función para calcular la media
+        function promedio(datos) {
+            return datos.reduce((a, b) => a + b, 0) / datos.length;
+        }
+
+        // Función para calcular la moda
+        function calcularModa(datos) {
+            const count = {};
+            datos.forEach(num => count[num] = (count[num] || 0) + 1);
+            let maxCount = Math.max(...Object.values(count));
+            return Object.keys(count).filter(key => count[key] === maxCount).map(Number);
+        }
+
+        // Función para calcular la mediana
+        function calcularMediana(datos) {
+            datos.sort((a, b) => a - b);
+            let mitad = Math.floor(datos.length / 2);
+            return datos.length % 2 === 0 ? (datos[mitad - 1] + datos[mitad]) / 2 : datos[mitad];
+        }
+
+        // Función para calcular la varianza
+        function calcularVarianza(datos, media) {
+            return datos.reduce((acc, val) => acc + Math.pow(val - media, 2), 0) / datos.length;
+        }
+
+        // Función para calcular el cuartil
+        function calcularCuartil(datos, q) {
+            datos.sort((a, b) => a - b);
+            let pos = (datos.length - 1) * q;
+            let base = Math.floor(pos);
+            let resto = pos - base;
+            return datos[base] + resto * (datos[base + 1] - datos[base]);
+        }
+
+        // Funcion para calcular el sesgo
+        function calcularSesgo(datos, media, desviacion) {
+            let n = datos.length;
+            return n / ((n - 1) * (n - 2)) * datos.reduce((acc, val) => acc + Math.pow((val - media) / desviacion, 3), 0);
+        }
+
+        // Función para calcular la curtosis
+        function calcularCurtosis(datos, media, desviacion) {
+            let n = datos.length;
+            return (n * (n + 1) * datos.reduce((acc, val) => acc + Math.pow((val - media) / desviacion, 4), 0)) / ((n - 1) * (n - 2) * (n - 3)) - (3 * Math.pow(n - 1, 2)) / ((n - 2) * (n - 3));
+        }
+
+        function graficar(datos) {
+            const tipo = document.getElementById("tipoGrafica").value;
+
+            let trace;
+            if (tipo === "histograma") {
+                trace = {
+                    x: datos,
+                    type: 'histogram',
+                    histnorm: 'probability'
+                };
+            } else if (tipo === "caja y bigote") {
+                trace = {
+                    y: datos,
+                    type: 'box'
+                };
+            } else if (tipo === "xy") {
+                trace = {
+                    x: Array.from({ length: datos.length }, (_, i) => i),
+                    y: datos,
+                    mode: 'markers',
+                    type: 'scatter'
+                };
+            } else if (tipo === "tendencia") {
+                trace = {
+                    x: Array.from({ length: datos.length }, (_, i) => i),
+                    y: datos,
+                    mode: 'lines',
+                    type: 'scatter'
+                };
+            }
+
+            const layout = {
+                title: 'Gráfica Estadística',
+                xaxis: { title: 'Datos' },
+                yaxis: { title: 'Valor' }
+            };
+
+            Plotly.newPlot('grafica-container', [trace], layout);
+        }
+
+        // Funcion que se llama al hacer click en el boton Calcular
+        document.getElementById("calcular").onclick = () => {
+            const inputDatos = document.getElementById("numeros").value.trim();
+
+            if (inputDatos !== "") {
+                const datos = inputDatos.split(" ").map(num => parseFloat(num)).filter(num => !isNaN(num));
+                calcularEstadisticas(datos);
+            } else {
+                alert("Por favor, ingresa datos en el campo de texto.");
+            }
+        };
+
+        // Asociar la función a los archivos de Excel subidos
+        document.getElementById("excelFile").addEventListener("change", leerArchivoExcel);
+    </script>
+</body>
+</html>
+</html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Calculadoras de Matrices y Minimos Cuadrados</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .contenedor { display: flex; gap: 20px; }
+        .botonera { margin-bottom: 20px; }
+        .calculadora { display: none; }
+        .visible { display: block; }
+    </style>
+    <!-- Se incluyen las librerias necesarias -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.6.4/math.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h1>Calculadoras</h1>
+    <div class="botonera">
+        <button onclick="mostrarCalculadora('matrices')">Calculadora de Matrices</button>
+        <button onclick="mostrarCalculadora('minimos')">Calculadora de Minimos Cuadrados</button>
+    </div>
+
+    <div class="contenedor">
+        <!-- Calculadora de Matrices con las operaciones adicionales -->
+        <div id="matrices" class="calculadora visible">
+            <h2>Calculadora de Matrices</h2>
+            <textarea id="inputMatrices" placeholder="Ingresa la matriz separando elementos por comas y filas por saltos de linea"></textarea>
+            <button onclick="calcularMatrices()">Calcular Operaciones</button>
+            <p>Determinante: <span id="resultadoDeterminante"></span></p>
+            <p>Suma (Matriz + Matriz): <span id="resultadoSuma"></span></p>
+            <p>Resta (Matriz - Matriz): <span id="resultadoResta"></span></p>
+            <p>Multiplicación (Matriz * Matriz): <span id="resultadoMultiplicacion"></span></p>
+            <p>Inversa: <span id="resultadoInversa"></span></p>
+            <p>Transpuesta: <span id="resultadoTranspuesta"></span></p>
+            <div id="graficaMatrices" style="width:400px; height:400px;"></div>
+        </div>
+
+        <!-- Calculadora de Minimos Cuadrados (sin cambios) -->
+        <div id="minimos" class="calculadora">
+            <h2>Calculadora de Minimos Cuadrados</h2>
+            <textarea id="inputMinimos" placeholder="Ingresa los valores en formato x,y separados por saltos de linea"></textarea>
+            <button onclick="calcularMinimos()">Calcular Ecuacion de la Recta</button>
+            <p>Ecuacion de la recta: <span id="resultadoMinimos"></span></p>
+            <div id="graficaMinimos" style="width:400px; height:400px;"></div>
+        </div>
+    </div>
+
+    <script>
+        function mostrarCalculadora(id) {
+            document.getElementById('matrices').classList.remove('visible');
+            document.getElementById('minimos').classList.remove('visible');
+            document.getElementById(id).classList.add('visible');
+        }
+
+        function calcularMatrices() {
+            const input = document.getElementById('inputMatrices').value.trim();
+            // Convertir el input en una matriz numerica.
+            const matriz = input.split('\n').map(row => row.split(',').map(Number));
+            
+            try {
+                // Operaciones con math.js
+                const determinante = math.det(matriz);
+                const suma = math.add(matriz, matriz); // Suma: matriz + matriz
+                const resta = math.subtract(matriz, matriz); // Resta: matriz - matriz
+                const multiplicacion = math.multiply(matriz, matriz); // Multiplicacion: matriz * matriz
+                const inversa = math.inv(matriz);
+                const transpuesta = math.transpose(matriz);
+
+                // Mostrar resultados en el HTML.
+                document.getElementById('resultadoDeterminante').textContent = determinante.toFixed(2);
+                document.getElementById('resultadoSuma').textContent = JSON.stringify(suma);
+                document.getElementById('resultadoResta').textContent = JSON.stringify(resta);
+                document.getElementById('resultadoMultiplicacion').textContent = JSON.stringify(multiplicacion);
+                document.getElementById('resultadoInversa').textContent = JSON.stringify(inversa);
+                document.getElementById('resultadoTranspuesta').textContent = JSON.stringify(transpuesta);
+
+                // Graficar la matriz ingresada (heatmap de la matriz original)
+                Plotly.newPlot('graficaMatrices', [{
+                    z: matriz,
+                    type: 'heatmap'
+                }], {
+                    title: 'Matriz Ingresada'
+                });
+            } catch (error) {
+                alert('Error en las operaciones con la matriz: ' + error);
+            }
+        }
+
+        function calcularMinimos() {
+            const input = document.getElementById('inputMinimos').value.trim();
+            const puntos = input.split('\n').map(row => row.split(',').map(Number));
+            const n = puntos.length;
+            const sumX = puntos.reduce((acc, p) => acc + p[0], 0);
+            const sumY = puntos.reduce((acc, p) => acc + p[1], 0);
+            const sumXY = puntos.reduce((acc, p) => acc + p[0] * p[1], 0);
+            const sumX2 = puntos.reduce((acc, p) => acc + p[0] ** 2, 0);
+
+            const pendiente = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX ** 2);
+            const intercepto = (sumY - pendiente * sumX) / n;
+
+            document.getElementById('resultadoMinimos').textContent = `y = ${pendiente.toFixed(2)}x + ${intercepto.toFixed(2)}`;
+
+            // Graficar los puntos y la recta de minimos cuadrados.
+            const xValues = puntos.map(p => p[0]);
+            const yValues = puntos.map(p => p[1]);
+            const tracePuntos = {
+                x: xValues,
+                y: yValues,
+                mode: 'markers',
+                type: 'scatter',
+                name: 'Puntos'
+            };
+
+            const traceRecta = {
+                x: [Math.min(...xValues), Math.max(...xValues)],
+                y: [pendiente * Math.min(...xValues) + intercepto, pendiente * Math.max(...xValues) + intercepto],
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Recta de ajuste'
+            };
+
+            Plotly.newPlot('graficaMinimos', [tracePuntos, traceRecta], {
+                title: 'Minimos Cuadrados'
+            });
+        }
+    </script>
+</body>
+</html>
